@@ -9,8 +9,9 @@ ESPO_URL = os.environ.get('ESPO_URL')       # Tu URL de EspoCRM
 ESPO_API_KEY = os.environ.get('ESPO_API_KEY') # La que generamos en el Paso 1
 
 HEADERS_ESPO = {
-    'X-Api-Key': ESPO_API_KEY,
-    'Content-Type': 'application/json'
+    'X-Api-Key': os.environ.get('ESPO_API_KEY'),
+    'Content-Type': 'application/json',
+    'Accept': 'application/json'
 }
 
 @app.route('/webhook', methods=['POST'])
@@ -32,6 +33,9 @@ def webhook_whatsapp():
     
     try:
         res = requests.get(search_url, headers=HEADERS_ESPO)
+        # AGREGAR ESTAS DOS LÍNEAS:
+        print(f"ESTADO ESPOCRM: {res.status_code}")
+        print(f"RESPUESTA CRUDA ESPOCRM: {res.text}")
         search_results = res.json()
         
         if search_results['total'] > 0:
