@@ -53,7 +53,11 @@ def webhook_whatsapp():
             }
             res_post = requests.post(f"{ESPO_URL}/api/v1/Account", json=new_account, headers=HEADERS_ESPO)
             print(f"ESTADO CREACIÓN ESPOCRM: {res_post.status_code}")
-            print(f"Creada nueva cuenta para: {sender_number}")
+            # AGREGAMOS ESTO PARA VER EL ERROR EXACTO:
+            if res_post.status_code != 200:
+                print(f"ERROR DE CREACIÓN: {res_post.text}")
+            else:
+                print(f"Creada nueva cuenta para: {sender_number}")
 
     except Exception as e:
         print(f"Error procesando integración: {e}")
