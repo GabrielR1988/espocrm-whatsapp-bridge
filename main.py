@@ -126,12 +126,12 @@ def evolution_webhook():
         
         # 2 y 3. Filtrar: Solo mensajes enviados por el agente que contengan la "palabra clave"
         # Usamos .lower() para que no discrimine mayúsculas y minúsculas
-        keyword = "palabra clave" # <-- Define tu palabra/frase mágica aquí
+        keyword = "Perfecto, te cargo en el sistema" # <-- Define tu palabra/frase mágica aquí
         
         if from_me and keyword.lower() in text.lower():
             # Limpiamos el número de teléfono (quitamos el sufijo @s.whatsapp.net)
             phone_number = remote_jid.split('@')[0]
-            print(f"Palabra clave detectada por el agente hacia el número {phone_number}")
+            print(f"Perfecto, te cargo en el sistema {phone_number}")
             
             # 4. Buscamos el ID de contacto en EspoCRM
             contact_id = get_contact_by_phone(phone_number)
