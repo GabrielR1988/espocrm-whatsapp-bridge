@@ -4,147 +4,119 @@ from flask import Flask, request, jsonify
 
 app = Flask(__name__)
 
+# --- CONFIGURACIÓN ---
 ESPO_URL = os.environ.get('ESPO_URL')
 ESPO_API_KEY = os.environ.get('ESPO_API_KEY')
+# Define aquí tu palabra o frase mágica
+KEYWORD_OPPORTUNITY = "crear prospecto" 
 
-HEADERS_ESPO = {
+HEADERS = {
     'X-Api-Key': ESPO_API_KEY,
     'Content-Type': 'application/json',
     'Accept': 'application/json'
 }
 
-@app.route('/webhook', methods=['POST'])
-def webhook_whatsapp():
-    data = request.json
-    
-    sender_raw = data.get('data', {}).get('key', {}).get('remoteJid', '')
-    sender_number = sender_raw.split('@')[0]
-    
-    if not sender_number:
-        return "Ignorado", 200
+# --- FUNCIONES DE AYUDA (HELPERS) ---
 
-    # 1. Búsqueda con tu campo exacto: cWhatsappid
-    search_params = {
-        'where[0][type]': 'equals',
-        'where[0][attribute]': 'cWhatsappid', 
-        'where[0][value]': sender_number
-    }
-    
-    try:
-        res = requests.get(f"{ESPO_URL}/api/v1/Account", headers=HEADERS_ESPO, params=search_params)
-        
-        print(f"ESTADO BÚSQUEDA ESPOCRM: {res.status_code}")
-        
-        if res.status_code != 200:
-            print(f"RESPUESTA ERROR: {res.text}")
-            return "Error en búsqueda", 400
-
-        search_results = res.json()
-        
-        if search_results['total'] > 0:
-            account_id = search_results['list'][0]['id']
-            print(f"Mensaje de cliente existente: {account_id}")
-        else:
-            # 2. Creación con tus campos exactos: cWhatsappid y cLabelnuevo
-            new_account = {
-                "name": f"Nuevo Contacto ({sender_number})",
-                "cWhatsappid": sender_number,
-                "cLabelnuevo": ["Nuevo"] # Asegúrate de que "Nuevo" sea una de las opciones válidas en tu lista de EspoCRM
-            }
-            res_post = requests.post(f"{ESPO_URL}/api/v1/Account", json=new_account, headers=HEADERS_ESPO)
-            print(f"ESTADO CREACIÓN ESPOCRM: {res_post.status_code}")
-            # AGREGAMOS ESTO PARA VER EL ERROR EXACTO:
-            if res_post.status_code != 200:
-                print(f"ERROR DE CREACIÓN: {res_post.text}")
-            else:
-                print(f"Creada nueva cuenta para: {sender_number}")
-
-    except Exception as e:
-        print(f"Error procesando integración: {e}")
-
-    return "OK", 200
-
-def get_contact_by_phone(phone_number):
-    """
-    Busca al contacto en EspoCRM a partir de su número de teléfono.
-    Retorna el ID del contacto si existe, o None si no se encuentra.
-    """
-    url = f"{ESPO_URL}/api/v1/Contact"
+def get_account_by_phone(phone):
+    """ Busca si ya existe un Account con ese teléfono """
+    url = f"{ESPO_URL}/api/v1/Account"
     params = {
         'where[0][type]': 'contains',
         'where[0][attribute]': 'phoneNumber',
-        'where[0][value]': phone_number
+        'where[0][value]': phone
     }
-    
     response = requests.get(url, headers=HEADERS, params=params)
     if response.status_code == 200:
         data = response.json()
         if data.get('list') and len(data['list']) > 0:
-            return data['list'][0]['id']
+            return data['list'][0]
     return None
 
-def create_opportunity(contact_id, phone_number):
-    """
-    Crea una nueva Opportunity asociada al ID del contacto.
-    """
-    url = f"{ESPO_URL}/api/v1/Opportunity"
+def create_account(phone, name):
+    """ Crea un nuevo Account en EspoCRM """
+    url = f"{ESPO_URL}/api/v1/Account"
     payload = {
-        "name": f"Oportunidad - WA {phone_number}",
-        "stage": "Prospecting", # Cambia esto por la etapa inicial real de tu pipeline
-        "contactId": contact_id,
-        "amount": 0
+        "name": name,
+        "phoneNumber": phone,
+        "description": "Creado automáticamente desde WhatsApp"
     }
-    
     response = requests.post(url, headers=HEADERS, json=payload)
     if response.status_code in [200, 201]:
-        print("¡Oportunidad creada con éxito en EspoCRM!")
-        return True
-    else:
-        print("Error creando oportunidad:", response.text)
-        return False
+        return response.json()
+    return None
 
-@app.route('/webhook/evolution', methods=['POST'])
-def evolution_webhook():
+def create_opportunity(account_id, phone):
+    """ Crea una oportunidad vinculada al Account """
+    url = f"{ESPO_URL}/api/v1/Opportunity"
+    payload = {
+        "name": f"Oportunidad WA - {phone}",
+        "stage": "Prospecting",  # <-- ASEGURATE QUE ESTA ETAPA EXISTA EN TU CRM
+        "accountId": account_id,
+        "amount": 0
+    }
+    response = requests.post(url, headers=HEADERS, json=payload)
+    return response.status_code in [200, 201]
+
+# --- ENDPOINT PRINCIPAL (WEBHOOK) ---
+
+@app.route('/webhook', methods=['POST'])
+def webhook():
     data = request.json
     
-    # 1. Asegurarnos de que el evento entrante es de un nuevo mensaje (messages.upsert)
+    # Validamos que sea un evento de mensaje nuevo
     if data.get('event') == 'messages.upsert':
-        # Evolution API anida la información dentro de 'data' -> 'message'
-        msg_data = data.get('data', {}).get('message', {})
+        msg_payload = data.get('data', {}).get('message', {})
         
-        # En Evolution v2 suele venir como un dict, pero por precaución manejamos si es array
-        if isinstance(msg_data, list) and len(msg_data) > 0:
-            msg_data = msg_data[0]
-            
-        key = msg_data.get('key', {})
+        # Evolution a veces manda una lista, manejamos ambos casos
+        if isinstance(msg_payload, list):
+            msg_payload = msg_payload[0] if len(msg_payload) > 0 else {}
+
+        key = msg_payload.get('key', {})
         from_me = key.get('fromMe', False)
         remote_jid = key.get('remoteJid', '')
+        push_name = data.get('data', {}).get('pushName', 'Cliente WhatsApp')
         
-        # Extraer el texto del mensaje (puede venir en diferentes atributos dependiendo del formato)
-        content = msg_data.get('message', {})
-        text = content.get('conversation') or content.get('extendedTextMessage', {}).get('text') or ''
+        # Extraer el texto del mensaje
+        message_content = msg_payload.get('message', {})
+        text = (message_content.get('conversation') or 
+                message_content.get('extendedTextMessage', {}).get('text') or "")
         
-        # 2 y 3. Filtrar: Solo mensajes enviados por el agente que contengan la "palabra clave"
-        # Usamos .lower() para que no discrimine mayúsculas y minúsculas
-        keyword = "Perfecto, te cargo en el sistema" # <-- Define tu palabra/frase mágica aquí
-        
-        if from_me and keyword.lower() in text.lower():
-            # Limpiamos el número de teléfono (quitamos el sufijo @s.whatsapp.net)
-            phone_number = remote_jid.split('@')[0]
-            print(f"Perfecto, te cargo en el sistema {phone_number}")
+        # Limpiar el número de teléfono
+        phone = remote_jid.split('@')[0]
+
+        # ---------------------------------------------------------
+        # LÓGICA 1: MENSAJE DEL CLIENTE (Carga de Account)
+        # ---------------------------------------------------------
+        if not from_me:
+            print(f"📥 Mensaje de cliente ({phone}). Verificando Account...")
+            existing_account = get_account_by_phone(phone)
             
-            # 4. Buscamos el ID de contacto en EspoCRM
-            contact_id = get_contact_by_phone(phone_number)
-            
-            if contact_id:
-                # 5. Creamos la Oportunidad asignada a ese contacto
-                create_opportunity(contact_id, phone_number)
+            if not existing_account:
+                print(f"✨ Creando nuevo Account para: {push_name}")
+                create_account(phone, push_name)
             else:
-                print(f"No se encontró un contacto registrado con el teléfono {phone_number}.")
-                # (Opcional): Si quieres que aquí además se cree el contacto, podrías llamar a 
-                # la misma función que ya usas actualmente para crear contactos nuevos.
+                print(f"✅ El Account ya existe: {existing_account['name']}")
+
+        # ---------------------------------------------------------
+        # LÓGICA 2: MENSAJE DEL AGENTE (Carga de Opportunity)
+        # ---------------------------------------------------------
+        elif from_me and KEYWORD_OPPORTUNITY.lower() in text.lower():
+            print(f"🚀 Palabra clave detectada hacia {phone}. Generando oportunidad...")
+            account = get_account_by_phone(phone)
+            
+            if account:
+                success = create_opportunity(account['id'], phone)
+                if success:
+                    print("💰 Oportunidad creada con éxito en el Pipeline.")
+                else:
+                    print("❌ Error al crear la oportunidad en EspoCRM.")
+            else:
+                print("⚠️ No se encontró el Account. Primero el cliente debe escribir para ser registrado.")
 
     return jsonify({"status": "success"}), 200
 
-if __name__ == "__main__":
-    app.run(host='0.0.0.0', port=int(os.environ.get("PORT", 5000)))
+if __name__ == '__main__':
+    # Usamos el puerto que Railway nos asigne
+    port = int(os.environ.get("PORT", 5000))
+    app.run(host='0.0.0.0', port=port)
