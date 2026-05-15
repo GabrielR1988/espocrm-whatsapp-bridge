@@ -1,6 +1,8 @@
 import os
 import requests
 from flask import Flask, request, jsonify
+from datetime import datetime, timedelta
+
 
 app = Flask(__name__)
 
@@ -60,22 +62,26 @@ def create_account(phone, name):
     return None
 
 def create_opportunity(account_id, phone):
-    """ Crea una oportunidad vinculada al ID del Account encontrado """
+    """ Crea una oportunidad vinculada al ID del Account con fecha de cierre automática """
     url = f"{ESPO_URL}/api/v1/Opportunity"
+    
+    # Generamos una fecha de cierre para dentro de 30 días (formato YYYY-MM-DD)
+    fecha_cierre = (datetime.now() + timedelta(days=30)).strftime('%Y-%m-%d')
+    
     payload = {
         "name": f"Oportunidad WA - {phone}",
-        "stage": "Prospecting", # <-- Podría ser el problema
+        "stage": "Prospecting",  # <-- Asegúrate que 'Prospecting' sea el VALOR correcto en tu CRM
         "accountId": account_id,
+        "closeDate": fecha_cierre, # <--- AQUÍ ESTÁ EL CAMPO QUE FALTABA
         "amount": 0
     }
     
-    print(f"Enviando datos a EspoCRM para crear Oportunidad...")
+    print(f"Enviando datos a EspoCRM con fecha de cierre: {fecha_cierre}")
     response = requests.post(url, headers=HEADERS, json=payload)
     
     if response.status_code in [200, 201]:
         return True
     else:
-        # ACA ESTA LA CLAVE: Nos va a imprimir de qué se queja EspoCRM
         print(f"Error de EspoCRM ({response.status_code}): {response.text}")
         return False
 
