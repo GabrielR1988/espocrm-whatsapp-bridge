@@ -64,12 +64,20 @@ def create_opportunity(account_id, phone):
     url = f"{ESPO_URL}/api/v1/Opportunity"
     payload = {
         "name": f"Oportunidad WA - {phone}",
-        "stage": "Prospecting", 
+        "stage": "Prospecting", # <-- Podría ser el problema
         "accountId": account_id,
         "amount": 0
     }
+    
+    print(f"Enviando datos a EspoCRM para crear Oportunidad...")
     response = requests.post(url, headers=HEADERS, json=payload)
-    return response.status_code in [200, 201]
+    
+    if response.status_code in [200, 201]:
+        return True
+    else:
+        # ACA ESTA LA CLAVE: Nos va a imprimir de qué se queja EspoCRM
+        print(f"Error de EspoCRM ({response.status_code}): {response.text}")
+        return False
 
 # --- ENDPOINT PRINCIPAL ---
 
