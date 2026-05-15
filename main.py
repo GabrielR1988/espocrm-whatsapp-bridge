@@ -8,7 +8,7 @@ app = Flask(__name__)
 ESPO_URL = os.environ.get('ESPO_URL')
 ESPO_API_KEY = os.environ.get('ESPO_API_KEY')
 # Define aquí tu palabra o frase mágica
-KEYWORD_OPPORTUNITY = "crear prospecto" 
+KEYWORD_OPPORTUNITY = "cargar en sistema" 
 
 HEADERS = {
     'X-Api-Key': ESPO_API_KEY,
@@ -66,24 +66,29 @@ def webhook():
     
     # Validamos que sea un evento de mensaje nuevo
     if data.get('event') == 'messages.upsert':
-        msg_payload = data.get('data', {}).get('message', {})
+        event_data = data.get('data', {})
         
-        # Evolution a veces manda una lista, manejamos ambos casos
-        if isinstance(msg_payload, list):
-            msg_payload = msg_payload[0] if len(msg_payload) > 0 else {}
+        # Evolution a veces manda una lista, manejamos ambos casos para que no falle
+        if isinstance(event_data, list):
+            event_data = event_data[0] if len(event_data) > 0 else {}
 
-        key = msg_payload.get('key', {})
+        # ACA ESTABA EL ERROR: Buscamos key, remoteJid y pushName directamente en event_data
+        key = event_data.get('key', {})
         from_me = key.get('fromMe', False)
         remote_jid = key.get('remoteJid', '')
-        push_name = data.get('data', {}).get('pushName', 'Cliente WhatsApp')
+        push_name = event_data.get('pushName', 'Cliente WhatsApp')
         
         # Extraer el texto del mensaje
-        message_content = msg_payload.get('message', {})
+        message_content = event_data.get('message', {})
         text = (message_content.get('conversation') or 
                 message_content.get('extendedTextMessage', {}).get('text') or "")
         
-        # Limpiar el número de teléfono
-        phone = remote_jid.split('@')[0]
+        # Limpiar el número de teléfono (agregamos una validación por si viene vacío)
+        phone = remote_jid.split('@')[0] if remote_jid else ""
+
+        if not phone:
+            print("⚠️ El webhook llegó pero no traía número de teléfono.")
+            return jsonify({"status": "ignored"}), 200
 
         # ---------------------------------------------------------
         # LÓGICA 1: MENSAJE DEL CLIENTE (Carga de Account)
@@ -96,7 +101,8 @@ def webhook():
                 print(f"✨ Creando nuevo Account para: {push_name}")
                 create_account(phone, push_name)
             else:
-                print(f"✅ El Account ya existe: {existing_account['name']}")
+                nombre = existing_account.get('name', 'Sin Nombre')
+                print(f"✅ El Account ya existe: {nombre}")
 
         # ---------------------------------------------------------
         # LÓGICA 2: MENSAJE DEL AGENTE (Carga de Opportunity)
