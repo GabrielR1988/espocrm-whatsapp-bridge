@@ -7,7 +7,7 @@ app = Flask(__name__)
 # --- CONFIGURACIÓN ---
 ESPO_URL = os.environ.get('ESPO_URL')
 ESPO_API_KEY = os.environ.get('ESPO_API_KEY')
-KEYWORD_OPPORTUNITY = "crear prospecto" 
+KEYWORD_OPPORTUNITY = "crear oportunidad" 
 
 HEADERS = {
     'X-Api-Key': ESPO_API_KEY,
