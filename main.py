@@ -19,18 +19,29 @@ HEADERS = {
 # --- FUNCIONES DE AYUDA (HELPERS) ---
 
 def get_account_by_phone(phone):
-    """ Busca si ya existe un Account con ese teléfono """
+    """ Busca si ya existe un Account con ese teléfono usando Búsqueda Global """
     url = f"{ESPO_URL}/api/v1/Account"
+    
+    # Usamos 'q' (búsqueda global) en lugar de buscar por atributo específico.
+    # Es mucho más seguro para encontrar teléfonos en EspoCRM.
     params = {
-        'where[0][type]': 'contains',
-        'where[0][attribute]': 'phoneNumber',
-        'where[0][value]': phone
+        'maxSize': 1,
+        'q': phone
     }
+    
+    print(f"Buscando en EspoCRM: {phone}...")
     response = requests.get(url, headers=HEADERS, params=params)
+    
     if response.status_code == 200:
         data = response.json()
         if data.get('list') and len(data['list']) > 0:
+            print(f"¡Account encontrado! ID: {data['list'][0]['id']}")
             return data['list'][0]
+        else:
+            print("EspoCRM devolvió una lista vacía (no lo encontró).")
+    else:
+        print(f"Error en la API de EspoCRM: {response.status_code} - {response.text}")
+        
     return None
 
 def create_account(phone, name):
